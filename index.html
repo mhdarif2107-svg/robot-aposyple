@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zombie Defender - Extreme Calibration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #020617;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: manipulation;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            background: linear-gradient(to bottom, #020617 0%, #1a2e05 100%);
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            border-radius: 12px;
+            max-width: 95%;
+            max-height: 95%;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 12px;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        #skill-ui {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            display: flex;
+            gap: 8px;
+            background: rgba(20, 20, 20, 0.8);
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            z-index: 10;
+            transform: scale(0.85);
+            transform-origin: bottom left;
+        }
+        #shop-ui {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 20;
+        }
+        .shop-btn {
+            background: #1e293b;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 10px;
+            border: 1px solid #334155;
+            transition: all 0.2s;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 140px;
+        }
+        .shop-btn:hover { background: #334155; }
+        .shop-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .skill-slot {
+            width: 50px; height: 50px; border-radius: 8px;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: white; font-weight: bold; font-size: 9px;
+            background: #27272a; border: 2px solid transparent; transition: all 0.2s;
+        }
+        .skill-slot.active { background: #166534; border-color: #4ade80; transform: scale(1.05); }
+
+        #boss-warning {
+            position: absolute; top: 20%; width: 100%; text-align: center;
+            color: #ef4444; font-size: 3rem; font-weight: 900;
+            display: none; z-index: 100; text-shadow: 0 0 20px #000;
+            animation: blink 0.5s infinite;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        .mode-btn { padding: 10px 20px; border-radius: 8px; font-weight: bold; transition: all 0.3s; border: 2px solid transparent; }
+        .mode-easy { background: #166534; color: white; }
+        .mode-medium { background: #854d0e; color: white; }
+        .mode-hard { background: #991b1b; color: white; }
+        .mode-selected { border-color: white; transform: scale(1.1); box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="boss-warning">PERINGATAN: BOSS DATANG!</div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div class="flex justify-between items-center gap-4">
+            <h1 class="text-sm font-black text-green-700">LV <span id="level-val">1</span></h1>
+            <div class="text-xs font-bold text-yellow-600">💰 <span id="coin-val">0</span></div>
+        </div>
+        <div class="flex items-center gap-2 mt-1">
+            <div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div id="hp-bar" class="h-full bg-green-500 transition-all duration-300" style="width: 100%"></div>
+            </div>
+        </div>
+        <p class="text-[10px] mt-1 font-bold text-slate-600 uppercase">Zombie: <span id="kill-val">0</span> | Armor: <span id="armor-val">0</span></p>
+    </div>
+
+    <div id="skill-ui">
+        <div id="slot-1" class="skill-slot active"><span>Pistol</span><span>[1]</span></div>
+        <div id="slot-2" class="skill-slot"><span>Shotgun</span><span>[2]</span></div>
+        <div id="slot-3" class="skill-slot"><span>Rifle</span><span>[3]</span></div>
+    </div>
+
+    <div id="shop-ui">
+        <div class="text-[10px] text-white font-bold mb-1 opacity-70 uppercase">Upgrade Markas</div>
+        <button onclick="buyUpgrade('hp')" id="btn-hp" class="shop-btn">💉 Suntikan Medis <span>$50</span></button>
+        <button onclick="buyUpgrade('armor')" id="btn-armor" class="shop-btn">🛡️ Upgrade Armor <span>$150</span></button>
+        <button onclick="buyUpgrade('speed')" id="btn-speed" class="shop-btn">⚡ Energy Drink <span>$200</span></button>
+    </div>
+
+    <!-- MAIN MENU OVERLAY -->
+    <div id="menu-overlay" class="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-white z-50">
+        <div class="absolute top-10 flex gap-10 bg-slate-900/80 p-4 rounded-xl border border-slate-700">
+             <div class="text-center">
+                 <p class="text-xs text-slate-400 uppercase">Total Zombie Dibantai</p>
+                 <p id="total-kills-display" class="text-3xl font-black text-red-500">0</p>
+             </div>
+        </div>
+
+        <h1 id="menu-title" class="text-6xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600">ZOMBIE DEFENDER</h1>
+        <p id="menu-desc" class="text-sm mb-10 opacity-80 text-center max-w-md italic text-green-200">Konfigurasi Darah Zombie: Easy (Tipis), Medium (Sedang), Hard (Tebal).</p>
+        
+        <div class="flex gap-4 mb-10">
+            <button id="btn-easy" onclick="selectMode('easy')" class="mode-btn mode-easy mode-selected">EASY</button>
+            <button id="btn-medium" onclick="selectMode('medium')" class="mode-btn mode-medium">MEDIUM</button>
+            <button id="btn-hard" onclick="selectMode('hard')" class="mode-btn mode-hard">HARD</button>
+        </div>
+
+        <button class="bg-green-600 hover:bg-green-500 px-16 py-4 rounded-full text-2xl font-bold transition-all transform hover:scale-105 shadow-2xl border-b-4 border-green-800" onclick="startGame()">MULAI PERANG</button>
+        
+        <div class="mt-8 text-slate-500 text-xs text-center space-y-1">
+            <p>Gerak: <b>A / D</b> | Lompat: <b>W</b> | Senjata: <b>1, 2, 3</b></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const levelDisplay = document.getElementById('level-val');
+    const killDisplay = document.getElementById('kill-val');
+    const coinDisplay = document.getElementById('coin-val');
+    const armorDisplay = document.getElementById('armor-val');
+    const hpBar = document.getElementById('hp-bar');
+    const menuOverlay = document.getElementById('menu-overlay');
+    const bossWarning = document.getElementById('boss-warning');
+    const totalKillsDisplay = document.getElementById('total-kills-display');
+
+    function resize() { canvas.width = 1000; canvas.height = 600; }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let gameActive = false;
+    let selectedGameMode = 'easy';
+    let totalKillsPersistent = 0;
+    let level = 1;
+    let kills = 0;
+    let killsThisLevel = 0;
+    let coins = 0;
+    let frameCount = 0;
+    let keys = {};
+    let bullets = [];
+    let enemyBullets = [];
+    let enemies = [];
+    let buildings = [];
+    let cameraX = 0;
+    let bossSpawnQueue = 0;
+    let lastBossSpawnTime = 0;
+
+    // KALIBRASI DARAH (HP) BERDASARKAN MODE
+    const MODES = {
+        easy: { 
+            hpBase: 25,        // Sangat tipis
+            hpIncr: 8,         // Pertumbuhan lambat
+            bossHpBase: 600, 
+            spawnRate: 0.015,
+            coinMult: 1.5,
+            zombieSpeed: 0.7
+        },
+        medium: { 
+            hpBase: 70,        // Standar
+            hpIncr: 25,        // Pertumbuhan normal
+            bossHpBase: 1800, 
+            spawnRate: 0.025,
+            coinMult: 1.0,
+            zombieSpeed: 1.0
+        },
+        hard: { 
+            hpBase: 200,       // Sangat tebal
+            hpIncr: 80,        // Pertumbuhan cepat (Level 10 jadi monster)
+            bossHpBase: 5000, 
+            spawnRate: 0.045,
+            coinMult: 0.8,
+            zombieSpeed: 1.25
+        }
+    };
+
+    function selectMode(m) {
+        selectedGameMode = m;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('mode-selected'));
+        document.getElementById(`btn-${m}`).classList.add('mode-selected');
+    }
+
+    const player = {
+        worldX: 200, y: 490, startY: 490, hp: 100, maxHp: 100, armor: 0, speed: 7, velY: 0,
+        isJumping: false, direction: 1, activeSkill: 1, attackCooldown: 0,
+        draw() {
+            let bob = this.isJumping ? 0 : Math.sin(frameCount * 0.15) * 4;
+            ctx.save();
+            ctx.translate(this.worldX - cameraX, this.y + bob);
+            ctx.fillStyle = "rgba(0,0,0,0.3)";
+            ctx.beginPath(); ctx.ellipse(0, 48 - bob, 25, 8, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#3f3f46";
+            let legM = this.isJumping ? 10 : (this.isMoving ? Math.sin(frameCount * 0.25) * 15 : 0);
+            ctx.fillRect(-15, 10 - legM/2, 12, 35 + legM/2);
+            ctx.fillRect(3, 10 + legM/2, 12, 35 - legM/2);
+            ctx.fillStyle = this.armor > 5 ? "#475569" : "#166534"; 
+            ctx.beginPath(); ctx.roundRect(-22, -35, 44, 50, 8); ctx.fill();
+            ctx.fillStyle = "#365314"; ctx.fillRect(-15, -25, 10, 10); ctx.fillRect(5, -15, 10, 15);
+            ctx.fillStyle = this.armor > 0 ? "#1e293b" : "#3f6212"; ctx.fillRect(-22, -20, 44, 15);
+            if(this.armor > 0) { ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 2; ctx.strokeRect(-22, -20, 44, 15); }
+            ctx.fillStyle = "#fef3c7"; ctx.beginPath(); ctx.arc(0, -55, 20, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = this.armor > 10 ? "#334155" : "#14532d";
+            ctx.beginPath(); ctx.arc(0, -60, 22, Math.PI, 0); ctx.lineTo(24, -55); ctx.lineTo(-24, -55); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = "#171717"; ctx.beginPath(); ctx.roundRect(4 * this.direction, -58, 14 * this.direction, 8, 2); ctx.fill();
+            this.drawWeapon();
+            ctx.restore();
+        },
+        drawWeapon() {
+            let tx = 38 * this.direction; let ty = -18;
+            ctx.strokeStyle = "#166534"; ctx.lineWidth = 10; ctx.lineCap = "round";
+            ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(tx, ty); ctx.stroke();
+            ctx.fillStyle = "#27272a";
+            if(this.activeSkill === 1) ctx.fillRect(tx - (this.direction < 0 ? 18 : 0), ty - 6, 18, 10);
+            else if(this.activeSkill === 2) { ctx.fillStyle = "#450a0a"; ctx.fillRect(tx - (this.direction < 0 ? 35 : 0), ty - 8, 35, 14); }
+            else if(this.activeSkill === 3) { ctx.fillStyle = "#064e3b"; ctx.fillRect(tx - (this.direction < 0 ? 50 : 0), ty - 6, 50, 10); }
+        },
+        update() {
+            this.isMoving = false;
+            if (keys['KeyA'] || keys['ArrowLeft']) { this.worldX -= this.speed; this.direction = -1; this.isMoving = true; }
+            if (keys['KeyD'] || keys['ArrowRight']) { this.worldX += this.speed; this.direction = 1; this.isMoving = true; }
+            if (keys['KeyW'] || keys['ArrowUp']) this.jump();
+            if (this.isJumping) {
+                this.y += this.velY; this.velY += 0.85;
+                if (this.y >= this.startY) { this.y = this.startY; this.isJumping = false; this.velY = 0; }
+            }
+            if (this.attackCooldown > 0) this.attackCooldown--;
+            this.worldX = Math.max(50, this.worldX);
+            cameraX = this.worldX - canvas.width / 3;
+            if (cameraX + canvas.width > (buildings.length > 0 ? buildings[buildings.length-1].x : 0)) generateMoreBuildings();
+        },
+        jump() { if (!this.isJumping) { this.velY = -17; this.isJumping = true; } },
+        takeDamage(amt) {
+            let modeDmg = selectedGameMode === 'hard' ? 1.4 : (selectedGameMode === 'easy' ? 0.6 : 1);
+            let reduction = Math.min(amt * 0.85, this.armor * 3);
+            this.hp -= Math.max(1, (amt * modeDmg) - reduction);
+            updateUI();
+            if (this.hp <= 0) gameOver();
+        },
+        attack() {
+            if (this.attackCooldown > 0) return;
+            const gunX = this.worldX + 45 * this.direction;
+            const gunY = this.y - 18;
+            if (this.activeSkill === 1) { bullets.push({ x: gunX, y: gunY, vx: this.direction * 16, vy: 0, dmgType: 'normal', dmg: 45, range: 650, startX: gunX }); this.attackCooldown = 14; }
+            else if (this.activeSkill === 2) { for(let i=0; i<12; i++) bullets.push({ x: gunX, y: gunY, vx: this.direction * 15, vy: (Math.random()-0.5)*7, dmgType: 'instakill', range: 230, startX: gunX }); this.attackCooldown = 35; }
+            else if (this.activeSkill === 3) { bullets.push({ x: gunX, y: gunY, vx: this.direction * 30, vy: 0, dmgType: 'half', range: 1300, startX: gunX }); this.attackCooldown = 8; }
+        }
+    };
+
+    class Zombie {
+        constructor(lv, forceType = null) {
+            let m = MODES[selectedGameMode];
+            this.type = forceType;
+            if (!this.type) {
+                let roll = Math.random();
+                if (lv >= 10) {
+                    if (roll < 0.25) this.type = 'armor'; else if (roll < 0.5) this.type = 'soldier'; else if (roll < 0.75) this.type = 'tank'; else this.type = 'normal';
+                } else {
+                    if (lv >= 7 && roll < 0.2) this.type = 'armor'; else if (lv >= 5 && roll < 0.35) this.type = 'soldier'; else if (lv >= 3 && roll < 0.5) this.type = 'tank'; else this.type = 'normal';
+                }
+            }
+
+            this.worldX = cameraX + canvas.width + Math.random() * 400;
+            this.y = 485;
+            this.anim = Math.random() * 10;
+            this.shootCooldown = 60 + Math.random() * 60;
+
+            // Logika HP Dinamis Berdasarkan Mode & Level
+            let baseHP = m.hpBase + (lv * m.hpIncr);
+
+            if (this.type === 'boss') {
+                this.hp = m.bossHpBase + (lv * (m.hpIncr * 5)); 
+                this.speed = 0.8 * m.zombieSpeed; this.size = 130; this.color = "#7f1d1d"; this.reward = 600; this.isBoss = true;
+                this.y = 480;
+            } else if (this.type === 'tank') {
+                this.hp = baseHP * 3; this.speed = 1.1 * m.zombieSpeed; this.size = 55; this.color = "#14532d"; this.reward = 40;
+            } else if (this.type === 'armor') {
+                this.hp = baseHP * 2.2; this.speed = 1.4 * m.zombieSpeed; this.size = 40; this.color = "#475569"; this.reward = 60;
+            } else if (this.type === 'soldier') {
+                this.hp = baseHP * 1.3; this.speed = 1.8 * m.zombieSpeed; this.size = 35; this.color = "#3f6212"; this.reward = 25;
+            } else {
+                this.hp = baseHP; this.speed = 2.4 * m.zombieSpeed; this.size = 32; this.color = "#4ade80"; this.reward = 15;
+            }
+            this.reward = Math.floor(this.reward * m.coinMult);
+            this.maxHp = this.hp;
+        }
+
+        draw() {
+            this.anim += 0.1;
+            let wobble = Math.sin(this.anim) * (this.isBoss ? 1 : 4);
+            ctx.save();
+            ctx.translate(this.worldX - cameraX, this.y);
+            ctx.fillStyle = this.color;
+            ctx.beginPath(); ctx.roundRect(-this.size/2, -10 + wobble, this.size, this.size + 10, 12); ctx.fill();
+            if(this.type === 'armor' || this.isBoss) {
+                ctx.strokeStyle = this.isBoss ? "#f87171" : "#94a3b8"; ctx.lineWidth = this.isBoss ? 8 : 3;
+                ctx.strokeRect(-this.size/2 + 5, -5 + wobble, this.size - 10, 25);
+            }
+            ctx.fillStyle = this.isBoss ? "#450a0a" : (this.type === 'tank' ? "#064e3b" : (this.type === 'armor' ? "#1e293b" : "#86efac"));
+            ctx.beginPath(); ctx.arc(0, -this.size/2 + wobble - (this.isBoss ? 25 : 0), this.size/2, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#ef4444";
+            let eyeSize = this.isBoss ? 15 : 4;
+            ctx.beginPath(); ctx.arc(-this.size/4, -this.size/2 + wobble - (this.isBoss ? 25 : 0), eyeSize, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(this.size/4, -this.size/2 + wobble - (this.isBoss ? 25 : 0), eyeSize, 0, Math.PI * 2); ctx.fill();
+            if (this.type === 'soldier' || this.type === 'armor' || this.isBoss) {
+                ctx.fillStyle = "#1c1917";
+                let gunW = this.isBoss ? 70 : 28; let gunH = this.isBoss ? 18 : 9;
+                ctx.fillRect(-gunW - 5, -5 + wobble, gunW, gunH);
+            }
+            let barW = this.isBoss ? 160 : 50;
+            ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(-barW/2, -this.size - 35, barW, 10);
+            ctx.fillStyle = this.isBoss ? "#ef4444" : "#22c55e"; ctx.fillRect(-barW/2, -this.size - 35, barW * (this.hp / this.maxHp), 10);
+            ctx.restore();
+        }
+
+        update() {
+            this.worldX -= this.speed;
+            if (this.type === 'soldier' || this.type === 'armor' || this.isBoss) {
+                this.shootCooldown--;
+                if (this.shootCooldown <= 0 && this.worldX - cameraX < canvas.width) {
+                    let bulletVx = this.isBoss ? -14 : -10.5;
+                    enemyBullets.push({ x: this.worldX - 30, y: this.y - 5, vx: bulletVx, vy: 0, isBoss: this.isBoss });
+                    this.shootCooldown = this.isBoss ? 32 : (110 + Math.random() * 50);
+                }
+            }
+            let dx = Math.abs(this.worldX - player.worldX);
+            let dy = Math.abs(this.y - player.y);
+            if (dx < this.size/2 + 10 && dy < 80) { player.takeDamage(this.isBoss ? 6 : (this.type === 'tank' ? 4 : 2)); }
+            return this.worldX > cameraX - 400;
+        }
+    }
+
+    function buyUpgrade(type) {
+        if(type === 'hp' && coins >= 50) { coins -= 50; player.hp = Math.min(player.maxHp, player.hp + 50); } 
+        else if(type === 'armor' && coins >= 150) { coins -= 150; player.armor += 1; } 
+        else if(type === 'speed' && coins >= 200) { coins -= 200; player.speed += 0.5; }
+        updateUI();
+    }
+
+    function generateMoreBuildings() {
+        const lastX = buildings.length > 0 ? buildings[buildings.length - 1].x + 200 : 0;
+        for(let i = 0; i < 10; i++) {
+            buildings.push({
+                x: lastX + (i * 220) + Math.random() * 40, w: 130 + Math.random() * 70, h: 280 + Math.random() * 300,
+                hue: level >= 10 ? 0 : 180 + Math.random() * 60, windows: Array.from({length: 30}, () => Math.random() > 0.6)
+            });
+        }
+    }
+
+    function drawCity() {
+        buildings.forEach(b => {
+            if (b.x + b.w > cameraX - 200 && b.x < cameraX + canvas.width + 200) {
+                ctx.fillStyle = level >= 10 ? `hsl(0, 60%, 3%)` : `hsl(${b.hue}, 20%, 3%)`;
+                ctx.fillRect(b.x - cameraX, 490 - b.h, b.w, b.h);
+                ctx.fillStyle = level >= 10 ? "#ef4444" : "#4ade80";
+                let winIdx = 0;
+                for(let row = 40; row < b.h - 50; row += 55) {
+                    for(let col = 25; col < b.w - 35; col += 40) {
+                        if (b.windows[winIdx % b.windows.length]) {
+                            ctx.globalAlpha = 0.3; ctx.fillRect(b.x - cameraX + col, 490 - b.h + row, 20, 28); ctx.globalAlpha = 1;
+                        } winIdx++;
+                    }
+                }
+            }
+        });
+    }
+
+    function updateUI() {
+        levelDisplay.innerText = level; killDisplay.innerText = kills;
+        coinDisplay.innerText = coins; armorDisplay.innerText = player.armor;
+        hpBar.style.width = (player.hp / player.maxHp * 100) + '%';
+        hpBar.className = `h-full transition-all duration-300 ${player.hp < 30 ? 'bg-red-500' : 'bg-green-500'}`;
+        document.querySelectorAll('.skill-slot').forEach(s => s.classList.remove('active'));
+        document.getElementById(`slot-${player.activeSkill}`).classList.add('active');
+        totalKillsDisplay.innerText = totalKillsPersistent;
+        document.getElementById('btn-hp').className = `shop-btn ${coins < 50 ? 'disabled' : ''}`;
+        document.getElementById('btn-armor').className = `shop-btn ${coins < 150 ? 'disabled' : ''}`;
+        document.getElementById('btn-speed').className = `shop-btn ${coins < 200 ? 'disabled' : ''}`;
+    }
+
+    function triggerBossWarning() {
+        bossWarning.style.display = 'block'; setTimeout(() => bossWarning.style.display = 'none', 3000);
+    }
+
+    function startGame() {
+        gameActive = true; level = 1; kills = 0; killsThisLevel = 0; coins = 0; player.hp = 100; cameraX = 0;
+        player.worldX = 200; player.activeSkill = 1; player.armor = 0; player.speed = 7;
+        enemies = []; bullets = []; enemyBullets = []; buildings = []; bossSpawnQueue = 0; lastBossSpawnTime = 0;
+        generateMoreBuildings(); menuOverlay.style.display = 'none'; updateUI();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function gameOver() {
+        gameActive = false; menuOverlay.style.display = 'flex';
+        document.getElementById('menu-title').innerText = "OPERASI GAGAL";
+        document.getElementById('menu-desc').innerText = `Skor: ${kills} Kills | Mode: ${selectedGameMode.toUpperCase()}`;
+        updateUI();
+    }
+
+    window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        if (e.code === 'Digit1') { player.activeSkill = 1; updateUI(); }
+        if (e.code === 'Digit2') { player.activeSkill = 2; updateUI(); }
+        if (e.code === 'Digit3') { player.activeSkill = 3; updateUI(); }
+        if (e.code === 'Space') player.attack();
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    canvas.addEventListener('mousedown', () => { if(gameActive) player.attack(); });
+
+    function gameLoop() {
+        if (!gameActive) return;
+        frameCount++;
+        let m = MODES[selectedGameMode];
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = level >= 10 ? "#080000" : "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawCity();
+        ctx.fillStyle = "#111"; ctx.fillRect(0, 490, canvas.width, 110);
+        ctx.fillStyle = level >= 10 ? "#ef4444" : "#166534"; ctx.fillRect(0, 490, canvas.width, 4); 
+
+        player.update(); player.draw();
+
+        // Level & Bosses
+        if (level === 5 && killsThisLevel >= 15 && bossSpawnQueue === 0 && !enemies.some(e => e.isBoss)) {
+            triggerBossWarning(); bossSpawnQueue = 1;
+        }
+        if (level >= 10 && killsThisLevel >= 20 && bossSpawnQueue === 0 && !enemies.some(e => e.isBoss)) {
+            triggerBossWarning(); bossSpawnQueue = 6;
+        }
+        if (bossSpawnQueue > 0 && Date.now() - lastBossSpawnTime > 2000) {
+            enemies.push(new Zombie(level, 'boss'));
+            bossSpawnQueue--; lastBossSpawnTime = Date.now();
+        }
+
+        // Bullets
+        bullets.forEach((b, bi) => {
+            b.x += b.vx; b.y += b.vy;
+            ctx.fillStyle = b.dmgType === 'normal' ? "#fbbf24" : (b.dmgType === 'instakill' ? "#ef4444" : "#4ade80");
+            ctx.beginPath(); ctx.arc(b.x - cameraX, b.y, 6, 0, Math.PI * 2); ctx.fill();
+            if (Math.abs(b.x - b.startX) > b.range) { bullets.splice(bi, 1); }
+            else {
+                enemies.forEach((en, ei) => {
+                    let d = Math.sqrt((b.x - en.worldX)**2 + (b.y - en.y)**2);
+                    if (d < en.size/2 + 10) {
+                        if (b.dmgType === 'instakill') { if (en.isBoss) en.hp -= 250; else en.hp = 0; }
+                        else if (b.dmgType === 'half') { if (en.isBoss) en.hp -= 40; else { en.hp /= 2; if (en.hp < 25) en.hp = 0; } }
+                        else en.hp -= b.dmg;
+                        if (b.dmgType !== 'half') bullets.splice(bi, 1);
+                        if (en.hp <= 0) { 
+                            coins += en.reward; enemies.splice(ei, 1); kills++; totalKillsPersistent++; killsThisLevel++;
+                            if (killsThisLevel >= 25 && level < 10) { level++; killsThisLevel = 0; updateUI(); }
+                            updateUI();
+                        }
+                    }
+                });
+            }
+        });
+
+        enemyBullets.forEach((eb, ebi) => {
+            eb.x += eb.vx; eb.y += eb.vy;
+            ctx.fillStyle = eb.isBoss ? "#ef4444" : "#f87171";
+            ctx.beginPath(); ctx.arc(eb.x - cameraX, eb.y, eb.isBoss ? 9 : 5, 0, Math.PI * 2); ctx.fill();
+            let d = Math.sqrt((eb.x - player.worldX)**2 + (eb.y - player.y + 20)**2);
+            if (d < 35) { player.takeDamage(eb.isBoss ? 35 : 20); enemyBullets.splice(ebi, 1); }
+            else if (eb.x < cameraX - 100) { enemyBullets.splice(ebi, 1); }
+        });
+
+        // Spawning
+        let maxEnemies = level >= 10 ? 20 : (5 + level);
+        if (Math.random() < m.spawnRate + (level * 0.006) && enemies.length < maxEnemies) {
+            enemies.push(new Zombie(level));
+        }
+
+        enemies = enemies.filter(en => { en.draw(); return en.update(); });
+        requestAnimationFrame(gameLoop);
+    }
+    updateUI();
+</script>
+</body>
+</html>
